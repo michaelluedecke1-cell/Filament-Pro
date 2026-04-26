@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Filament Pro Finder</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2563eb">
+
+    <style>
+        body { background: #0f172a; color: white; font-family: sans-serif; padding: 15px; margin: 0; }
+        .card { background: #1e293b; border-radius: 12px; padding: 15px; margin-bottom: 12px; border: 1px solid #334155; }
+        .match-exact { border-left: 5px solid #10b981; background: #142d24; }
+        .match-close { border-left: 5px solid #f59e0b; background: #2d2614; }
+        
+        input, select { width: 100%; padding: 12px; margin: 5px 0; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: white; font-size: 16px; box-sizing: border-box; }
+        
+        .btn { width: 100%; padding: 12px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; margin: 5px 0; }
+        .btn-blue { background: #2563eb; color: white; }
+        .btn-green { background: #10b981; color: white; }
+        .btn-gray { background: #4b5563; color: white; }
+        .btn-red { background: #dc2626; color: white; width: auto; padding: 8px; }
+        
+        .flex { display: flex; gap: 8px; }
+        .item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; }
+        .hidden { display: none; }
+        .search-box { background: #1e293b; border: 2px solid #3b82f6; padding: 10px; border-radius: 12px; margin-bottom: 20px; }
+        .stats { font-size: 12px; color: #10b981; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+
+    <h2 style="color:#3b82f6; margin-bottom:5px;">🧵 Filament Pro Finder</h2>
+    <div id="totalValue" class="stats">Lagerwert: 0,00 €</div>
+
+    <div class="search-box">
+        <label style="font-size: 10px; color: #3b82f6; font-weight: bold; text-transform: uppercase;">🔍 Reicht es für den Druck?</label>
+        <input type="number" id="searchWeight" placeholder="Gramm für Druck (z.B. 200)" oninput="render()">
+    </div>
+
+    <div class="card">
+        <h4 id="label" style="margin:0 0 10px 0;">Neue Rolle hinzufügen</h4>
+        <input type="hidden" id="editIdx" value="">
+        <div class="flex">
+            <input id="brand" type="text" placeholder="Marke">
+            <select id="mat">
+                <option value="PLA">PLA</option>
+                <option value="Silk">Silk (Glänzend)</option>
+                <option value="PETG">PETG</option>
+                <option value="TPU">TPU</option>
+                <option value="ASA">ASA</option>
+                <option value="ABS">ABS</option>
+            </select>
+        </div>
+        <div class="flex">
+            <input id="color" type="text" placeholder="Farbe">
+            <input id="price" type="number" step="0.01" placeholder="Preis/kg (€)">
+        </div>
+        <input id="weight" type="number" placeholder="Gewicht (g)">
+        
+        <button id="saveBtn" class="btn btn-blue" onclick="save()">Speichern</button>
+        <button id="cancelBtn" class="btn btn-gray hidden" onclick="resetForm()">Abbrechen</button>
+    </div>
+
+    <div class="flex" style="margin-bottom: 15px;">
+        <button class="btn btn-gray" style="font-size:10px;" onclick="exportData()">💾 Backup</button>
+        <button class="btn btn-gray" style="font-size:10px;" onclick="document.getElementById('fileIn').click()">📥 Import</button>
+        <input type="file" id="fileIn" class="hidden" onchange="importData(event)">
+    </div>
+
+    <div id="list"></div>
+
+    <script>
+        let db = JSON.parse(localStorage.getItem('filament_pro_v4') || '[]');
+
+        function render() {
+            const container = document.getElementById('list');
+            const searchVal = parseInt(document.getElementById('searchWeight').value) || 0;
+            container.innerHTML = "";
+            let total = 0;
+
+            db.forEach((f, i) => {
+                if (searchVal > 0 && f.w < searchVal) return;
+
+                const wert = ((f.p / 1000) * f.w).toFixed(2);
+                total += parseFloat(wert);
+                const puffer = f.w - searchVal;
+                let statusClass = (searchVal > 0) ? (puffer < 50 ? "match-close" : "match-exact") : "";
+
+                const div = document.createElement('div');
+                div.className = `card ${statusClass}`;
+                div.innerHTML = `
+                    <div class="item">
+                        <div style="flex-grow:1;">
+                            <b>${f.b}</b> <small style="background:#2563eb; padding:2px 4px; border-radius:4px;">${f.m}</small><br>
+                            <span style="color:#cbd5e1;">${f.c} • <b>${f.w}g</b></span>
+                            ${searchVal > 0 ? `<br><small style="color:#10b981;">✅ +${puffer}g Rest</small>` : `<br><small style="color:#10b981;">Wert: ${wert}€</small>`}
+                        </div>
+                        <div class="flex">
+                            <button class="btn-green" style="padding:8px; border-radius:5px;" onclick="calc(${i})">⚖️</button>
+                            <button onclick="edit(${i})" style="background:none; border:none; font-size:18px;">✏️</button>
+                            <button onclick="del(${i})" style="background:none; border:none; color:#ef4444; font-size:18px;">🗑️</button>
+                        </div>
+                    </div>`;
+                container.appendChild(div);
+            });
+            document.getElementById('totalValue').innerText = `Lagerwert: ${total.toFixed(2)} €`;
+            localStorage.setItem('filament_pro_v4', JSON.stringify(db));
+        }
+
+        function save() {
+            const b = document.getElementById('brand').value;
+            const m = document.getElementById('mat').value;
+            const c = document.getElementById('color').value;
+            const p = parseFloat(document.getElementById('price').value) || 0;
+            const w = parseInt(document.getElementById('weight').value) || 0;
+            const idx = document.getElementById('editIdx').value;
+
+            if(!b || isNaN(w)) return alert("Marke und Gewicht fehlen!");
+            const roll = { b, m, c, p, w };
+
+            if(idx === "") db.push(roll);
+            else db[idx] = roll;
+
+            resetForm();
+            render();
+        }
+
+        function calc(i) {
+            const verbrauch = prompt("Gramm für diesen Druck?", "20");
+            if(verbrauch) {
+                const g = parseInt(verbrauch);
+                const kosten = ((db[i].p / 1000) * g).toFixed(2);
+                if(confirm("Kosten: " + kosten + " €. Abziehen?")) {
+                    db[i].w = Math.max(0, db[i].w - g);
+                    render();
+                }
+            }
+        }
+
+        function edit(i) {
+            const f = db[i];
+            document.getElementById('brand').value = f.b;
+            document.getElementById('mat').value = f.m;
+            document.getElementById('color').value = f.c;
+            document.getElementById('price').value = f.p;
+            document.getElementById('weight').value = f.w;
+            document.getElementById('editIdx').value = i;
+            document.getElementById('label').innerText = "Rolle bearbeiten";
+            document.getElementById('saveBtn').className = "btn btn-orange";
+            document.getElementById('cancelBtn').classList.remove('hidden');
+            window.scrollTo(0,0);
+        }
+
+        function resetForm() {
+            document.getElementById('editIdx').value = "";
+            document.getElementById('brand').value = "";
+            document.getElementById('color').value = "";
+            document.getElementById('price').value = "";
+            document.getElementById('weight').value = "";
+            document.getElementById('label').innerText = "Neue Rolle hinzufügen";
+            document.getElementById('saveBtn').className = "btn btn-blue";
+            document.getElementById('cancelBtn').classList.add('hidden');
+        }
+
+        function del(i) { if(confirm("Löschen?")) { db.splice(i,1); render(); } }
+        function exportData() {
+            const blob = new Blob([JSON.stringify(db)], {type: 'application/json'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'filament_pro_backup.json';
+            a.click();
+        }
+        function importData(event) {
+            const reader = new FileReader();
+            reader.onload = (e) => { db = JSON.parse(e.target.result); render(); };
+            reader.readAsText(event.target.files[0]);
+        }
+
+        // PWA Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').catch(err => console.log(err));
+        }
+
+        render();
+    </script>
+</body>
+</html>
+
