@@ -1,4 +1,4 @@
-const CACHE_NAME = 'filament-v1';
+const CACHE_NAME = 'filament-v2';
 const ASSETS = [
   'index.html',
   'manifest.json'
